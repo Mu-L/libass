@@ -31,19 +31,6 @@
 #define DRAWING_INITIAL_SEGMENTS 100
 
 /*
- * \brief Check whether a number of items on the list is available
- */
-static bool token_check_values(ASS_DrawingToken *token, int i, ASS_TokenType type)
-{
-    for (int j = 0; j < i; j++) {
-        if (!token || token->type != type) return false;
-        token = token->next;
-    }
-
-    return true;
-}
-
-/*
  * \brief Free a list of tokens
  */
 static void drawing_free_tokens(ASS_DrawingToken *token)
@@ -240,16 +227,14 @@ static ASS_DrawingToken *drawing_tokenize(const char *str)
         case 'p':
             if (points < 3)
                 continue;
-            // XXX: use TOKEN_EXTEND_SPLINE
-            points += add_many_points(&p, &tail, TOKEN_B_SPLINE, 1, &error);
+            points += add_many_points(&p, &tail, TOKEN_EXTEND_SPLINE, 1, &error);
             break;
         case 'c':
             if (!spline_start)
                 continue;
             // Close b-splines: add the first three points of the b-spline back to the end
             for (int i = 0; i < 3; i++) {
-                // XXX: use TOKEN_EXTEND_SPLINE
-                if (!add_node(&tail, TOKEN_B_SPLINE, spline_start->point)) {
+                if (!add_node(&tail, TOKEN_EXTEND_SPLINE, spline_start->point)) {
                     error = true;
                     break;
                 }
@@ -303,11 +288,24 @@ static bool drawing_add_curve(ASS_Outline *outline, ASS_Rect *cbox,
         p[2].y -= y12;
     }
 
-    return (started ||
-        ass_outline_add_point(outline, p[0], 0)) &&
+    return (started || ass_outline_add_point(outline, p[0], 0)) &&
         ass_outline_add_point(outline, p[1], 0) &&
         ass_outline_add_point(outline, p[2], 0) &&
         ass_outline_add_point(outline, p[3], OUTLINE_CUBIC_SPLINE);
+}
+
+/*
+ * Anything produced by our tokenizer is already supposed to fullfil these requirements
+ * where relevant, but let's check with an assert in builds without NDEBUG
+ */
+static inline void assert_3_forward(ASS_DrawingToken *token)
+{
+    assert(token && token->prev && token->next && token->next->next);
+}
+
+static inline void assert_4_back(ASS_DrawingToken *token)
+{
+    assert(token && token->prev && token->prev->prev && token->prev->prev->prev);
 }
 
 /*
@@ -356,29 +354,29 @@ bool ass_drawing_parse(ASS_Outline *outline, ASS_Rect *cbox,
             break;
         }
         case TOKEN_CUBIC_BEZIER:
-            if (token_check_values(token, 3, TOKEN_CUBIC_BEZIER) &&
-                token->prev) {
-                if (!drawing_add_curve(outline, cbox, token->prev, false, started))
-                    goto error;
-                token = token->next;
-                token = token->next;
-                token = token->next;
-                started = true;
-            } else
-                token = token->next;
+            assert_3_forward(token);
+            if (!drawing_add_curve(outline, cbox, token->prev, false, started))
+                goto error;
+            token = token->next;
+            token = token->next;
+            token = token->next;
+            started = true;
             break;
         case TOKEN_B_SPLINE:
-            if (token_check_values(token, 3, TOKEN_B_SPLINE) &&
-                token->prev) {
-                if (!drawing_add_curve(outline, cbox, token->prev, true, started))
-                    goto error;
-                token = token->next;
-                started = true;
-            } else
-                token = token->next;
-            break;
-        default:
+            assert_3_forward(token);
+            if (!drawing_add_curve(outline, cbox, token->prev, true, started))
+                goto error;
             token = token->next;
+            token = token->next;
+            token = token->next;
+            started = true;
+            break;
+        case TOKEN_EXTEND_SPLINE:
+            assert_4_back(token);
+            if (!drawing_add_curve(outline, cbox, token->prev->prev->prev, true, started))
+                goto error;
+            token = token->next;
+            started = true;
             break;
         }
     }
