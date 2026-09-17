@@ -301,7 +301,7 @@ static uint32_t convert_unicode_to_ms_symbol(FT_Face face, uint32_t symbol)
 
     TT_OS2 *os2 = FT_Get_Sfnt_Table(face, FT_SFNT_OS2);
     bool is_symbol_glyph_set = (offset) || (os2 &&
-                    os2->panose[0] == 5 && /* PAN_FAMILY_PICTORIAL */ 
+                    os2->panose[0] == 5 && /* PAN_FAMILY_PICTORIAL */
                     (os2->fsSelection & 0xFF) == 0 /* ANSI_CHARSET */);
 
     if (!is_symbol_glyph_set)
